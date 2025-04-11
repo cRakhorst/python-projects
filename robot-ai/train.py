@@ -1,48 +1,67 @@
-import neat
 import os
+import neat
 import numpy as np
 from robot import WalkingRobotEnv
-import time
-import pickle
+from datetime import datetime
 
-def eval_genomes(genomes, config):
+def eval_genomes(genomes, config, generation, run_dir):
+    best_genome = None
+    best_fitness = float('-inf')
+    best_log_data = []
+    best_genome_id = None
+
+    generation_dir = os.path.join(run_dir, f"generation{generation}")
+    os.makedirs(generation_dir, exist_ok=True)
+
     for genome_id, genome in genomes:
         try:
-            # Create a neural network from the genome
             net = neat.nn.FeedForwardNetwork.create(genome, config)
-
-            # Create a new environment
-            env = WalkingRobotEnv(render=False) # fix the rendering problem FOR FUCKS SAKE
+            env = WalkingRobotEnv(render=False)
             obs, _ = env.reset()
 
             total_fitness = 0
             done = False
-            start_time = time.time()
+            log_data = []
 
             while not done:
-                # Get the action from the network (output has 4 values for 4 joints)
-                actions = net.activate(obs)
-                action = np.clip(np.round(actions), 0, 2).astype(int)
-
-                # Perform the action in the environment
-                obs, fitness, done, _, _ = env.step(action)
-                total_fitness += fitness
-
-                # Stop the loop after 10 seconds to avoid long evaluation times
-                if time.time() - start_time > 10:
-                    break
+                outputs = net.activate(obs)
+                actions = np.array([0 if o < 0.33 else 1 if o < 0.66 else 2 for o in outputs], dtype=int)
+                obs, fitness, done, _, _ = env.step(actions)
+                if done:
+                    total_fitness = fitness
+                log_data.append((actions.tolist(), obs.tolist()))
 
             env.close()
-
-            # Assign the total fitness to the genome
             genome.fitness = total_fitness
-    
+
+            # Save robot's log
+            robot_log_path = os.path.join(generation_dir, f"robot_{genome_id}.txt")
+            with open(robot_log_path, "w") as f:
+                f.write(f"Fitness: {total_fitness:.2f}\n")
+                for actions, observations in log_data:
+                    f.write(f"{actions}\t{observations}\n")
+
+            if total_fitness > best_fitness:
+                best_fitness = total_fitness
+                best_genome = genome
+                best_log_data = log_data
+                best_genome_id = genome_id
+
         except Exception as e:
             print(f"Error evaluating genome {genome_id}: {e}")
             genome.fitness = 0.0
 
-def run_neat(config_file):
-    # Load the configuration
+    # Log best genome of this generation
+    log_file_path = os.path.join(run_dir, "training_log.txt")
+    with open(log_file_path, "a") as log_file:
+        if generation == 0:
+            log_file.write("Generation\tRobot ID\tFitness\tActions\tObservations\n")
+        for actions, observations in best_log_data:
+            log_file.write(f"{generation}\t{best_genome_id}\t{best_fitness:.2f}\t{actions}\t{observations}\n")
+
+    return best_genome, best_fitness
+
+def run_neat(config_file, run_number):
     config = neat.Config(
         neat.DefaultGenome,
         neat.DefaultReproduction,
@@ -51,30 +70,30 @@ def run_neat(config_file):
         config_file
     )
 
-    # Create a population
     population = neat.Population(config)
-
-    # Add statistics reporters
     population.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
     population.add_reporter(stats)
 
-    # Run the evolution process (50 generations in this case)
-    winner = population.run(eval_genomes, 2)
+    # Make run folder
+    models_dir = os.path.join(os.path.dirname(__file__), "models")
+    run_dir = os.path.join(models_dir, f"run{run_number}")
+    os.makedirs(run_dir, exist_ok=True)
 
-    # Display the best genome
-    print('\nBest genome:\n{!s}'.format(winner))
+    generation = 0
+    def eval_with_generation(genomes, config):
+        nonlocal generation
+        eval_genomes(genomes, config, generation, run_dir)
+        generation += 1
 
-    # Save the winner's genome to a file
-    model_dir = os.path.join(os.path.dirname(__file__), 'models')
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)  # Make sure the directory exists
-    winner_path = os.path.join(model_dir, "winner.pkl")
-    with open(winner_path, "wb") as f:
-        pickle.dump(winner, f)
+    winner = population.run(eval_with_generation, 50)
+
+    # Save winner as a plain text file (no pickle)
+    winner_path = os.path.join(run_dir, "winner.txt")
+    with open(winner_path, "w") as f:
+        f.write(str(winner))
 
 if __name__ == "__main__":
-    # Path to the configuration file
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(local_dir, "utils", "neat-config.txt")
-    run_neat(config_path)
+    config_path = os.path.join(os.path.dirname(__file__), "utils", "neat-config.txt")
+    run_number = 1  # <-- Change this per run or make dynamic
+    run_neat(config_path, run_number)

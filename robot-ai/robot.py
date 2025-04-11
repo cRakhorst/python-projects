@@ -12,6 +12,7 @@ class WalkingRobotEnv(gym.Env):
         super(WalkingRobotEnv, self).__init__()
 
         self.render_enabled = render
+        self.delta_time = 1 / 60
             
         self.WIDTH, self.HEIGHT = 800, 600
         self.ROBOT_WIDTH, self.ROBOT_HEIGHT = 40, 60
@@ -35,17 +36,25 @@ class WalkingRobotEnv(gym.Env):
         self.joint_angles = np.array([0, 90, 0, 90], dtype=np.float32)
 
         if self.render_enabled:
-            pygame.init()
-            pygame.font.init()
-            self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
-            pygame.display.set_caption("Walking Robot")
-            self.clock = pygame.time.Clock()
-            self.font = pygame.font.Font(None, 24)
+            try:
+                pygame.init()
+                pygame.font.init()
+                self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
+                pygame.display.set_caption("Walking Robot")
+                self.clock = pygame.time.Clock()
+                self.font = pygame.font.Font(None, 24)
+            except Exception as e:
+                print(f"Error initializing Pygame: {e}")
+        else:
+            self.screen = None
+            self.clock = None
+            self.font = None
 
     def reset(self, seed=None, options=None):
+        self.simulated_time = 0
         self.position = 0
         self.start_time = time.time()
-        self.total_fitness_score = 0  # Initialize here
+        self.total_fitness_score = 0
         self.robot_y_position = self.GROUND_Y - self.ROBOT_HEIGHT
         self.robot_y_velocity = 0
         self.joint_angles = np.array([0, 90, 0, 90], dtype=np.float32)
@@ -69,8 +78,9 @@ class WalkingRobotEnv(gym.Env):
         )
 
         # Apply gravity to the robot's torso
-        self.robot_y_velocity += self.gravity * 0.1  # Simulate gravity effect
-        self.robot_y_position += self.robot_y_velocity * 0.1
+        self.robot_y_velocity += self.gravity * self.delta_time * 10
+        self.robot_y_position += self.robot_y_velocity * self.delta_time * 10
+        self.simulated_time += self.delta_time
 
         # Calculate the position of the robot's legs
         upper_leg = 20
@@ -120,7 +130,9 @@ class WalkingRobotEnv(gym.Env):
             self.position -= step_power
 
         # Observation
-        obs = np.concatenate((self.joint_angles, [self.robot_y_position]), axis=None)
+        normalized_obs = self.joint_angles / 90.0  # van -1 tot 1
+        normalized_y = self.robot_y_position / self.GROUND_Y  # 0 tot 1
+        obs = np.concatenate((normalized_obs, [normalized_y]), axis=None)
 
         # Reward 1: Total distance moved
         delta_position = self.position - getattr(self, 'prev_position', 0)
@@ -130,7 +142,7 @@ class WalkingRobotEnv(gym.Env):
         self.total_fitness_score += fitness_score
 
         info = {}
-        done = (time.time() - self.start_time >= 10)
+        done = (self.simulated_time >= 10)
         return obs, fitness_score, done, False, info
 
     def render(self):
@@ -225,5 +237,4 @@ if __name__ == "__main__":
         env.render()
 
     print(f"Total fitness score: {total_fitness_score:.2f}")
-    time.sleep(1)
     env.close()

@@ -1,45 +1,59 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-import pickle
-import neat
-import os
-from robot import WalkingRobotEnv
 import numpy as np
-import time
+from robot import WalkingRobotEnv
 
-def visualize_winner(config_path, genome_path):
-    with open(genome_path, "rb") as f:
-        genome = pickle.load(f)
+def visualize_best_from_log(run_number):
+    run_dir = os.path.join(os.path.dirname(__file__), "models", f"run{run_number}")
+    log_file_path = os.path.join(run_dir, "training_log.txt")
 
-    config = neat.Config(
-        neat.DefaultGenome,
-        neat.DefaultReproduction,
-        neat.DefaultSpeciesSet,
-        neat.DefaultStagnation,
-        config_path
-    )
+    if not os.path.exists(log_file_path):
+        print(f"No training log found in {run_dir}")
+        return
 
-    net = neat.nn.FeedForwardNetwork.create(genome, config)
-    env = WalkingRobotEnv()
+    with open(log_file_path, "r") as log_file:
+        lines = log_file.readlines()[1:]  # Skip header
+
+    best_line = None
+    best_fitness = float('-inf')
+
+    for line in lines:
+        parts = line.strip().split("\t")
+        if len(parts) < 5:
+            continue
+        try:
+            fitness = float(parts[2])
+            if fitness > best_fitness:
+                best_fitness = fitness
+                best_line = parts
+        except ValueError:
+            continue
+
+    if not best_line:
+        print("No valid data found.")
+        return
+
+    # Replay the best robot
+    env = WalkingRobotEnv(render=True)
     obs, _ = env.reset()
+    print(f"Visualizing best robot from run{run_number} with fitness {best_fitness:.2f}")
 
-    done = False
-    total_fitness = 0
-    start_time = time.time()
+    with open(log_file_path, "r") as log_file:
+        lines = log_file.readlines()[1:]
 
-    while not done:
-        action = [np.argmax(net.activate(obs)) for _ in range(4)]
-        obs, fitness, done, _, _ = env.step(action)
-        total_fitness += fitness
+    for line in lines:
+        parts = line.strip().split("\t")
+        if len(parts) < 5 or parts[2] != str(best_fitness):
+            continue
+
+        actions = np.array(eval(parts[3]))
+        observations = np.array(eval(parts[4]))
+
+        env.step(actions)
         env.render()
 
-    print(f"Total fitness of winner: {total_fitness:.2f}")
-    time.sleep(2)
     env.close()
 
 if __name__ == "__main__":
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "utils", "neat-config.txt")
-    genome_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "winner.pkl")
-    visualize_winner(config_path, genome_path)
+    run_number = 1  # <-- Change to visualize different runs
+    visualize_best_from_log(run_number)

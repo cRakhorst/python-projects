@@ -1,0 +1,43 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Environment
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VSCode settings (optioneel)
+.vscode/
+
+# Logs and runtime files
+*.log
+*.tmp
+*.pickle
+*.pkl
+
+# Output model data
+models/run*/
+models/*/generation*/
+
+# NEAT checkpoints (als je ze gebruikt)
+neat-checkpoint*
+
+# Cache and system files
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore compiled C extensions (if any)
+*.so
+
+# Ignore training logs
+models/training_log.txt
