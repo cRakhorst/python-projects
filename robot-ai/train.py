@@ -2,16 +2,12 @@ import os
 import neat
 import numpy as np
 from robot import WalkingRobotEnv
-from datetime import datetime
 
-def eval_genomes(genomes, config, generation, run_dir):
+def eval_genomes(genomes, config):
+    global best_log_data  # Make it accessible globally
     best_genome = None
     best_fitness = float('-inf')
     best_log_data = []
-    best_genome_id = None
-
-    generation_dir = os.path.join(run_dir, f"generation{generation}")
-    os.makedirs(generation_dir, exist_ok=True)
 
     for genome_id, genome in genomes:
         try:
@@ -21,7 +17,7 @@ def eval_genomes(genomes, config, generation, run_dir):
 
             total_fitness = 0
             done = False
-            log_data = []
+            log_data = []  # This stores actions and observations for this genome
 
             while not done:
                 outputs = net.activate(obs)
@@ -34,34 +30,32 @@ def eval_genomes(genomes, config, generation, run_dir):
             env.close()
             genome.fitness = total_fitness
 
-            # Save robot's log
-            robot_log_path = os.path.join(generation_dir, f"robot_{genome_id}.txt")
-            with open(robot_log_path, "w") as f:
-                f.write(f"Fitness: {total_fitness:.2f}\n")
-                for actions, observations in log_data:
-                    f.write(f"{actions}\t{observations}\n")
-
+            # Update the best genome if this one is better
             if total_fitness > best_fitness:
                 best_fitness = total_fitness
                 best_genome = genome
                 best_log_data = log_data
-                best_genome_id = genome_id
 
         except Exception as e:
             print(f"Error evaluating genome {genome_id}: {e}")
             genome.fitness = 0.0
 
-    # Log best genome of this generation
-    log_file_path = os.path.join(run_dir, "training_log.txt")
-    with open(log_file_path, "a") as log_file:
-        if generation == 0:
-            log_file.write("Generation\tRobot ID\tFitness\tActions\tObservations\n")
-        for actions, observations in best_log_data:
-            log_file.write(f"{generation}\t{best_genome_id}\t{best_fitness:.2f}\t{actions}\t{observations}\n")
+    return best_genome, best_fitness, best_log_data
 
-    return best_genome, best_fitness
 
-def run_neat(config_file, run_number):
+def get_next_run_filename(models_dir):
+    # Find the next available run file name
+    run_number = 1
+    while os.path.exists(os.path.join(models_dir, f"run{run_number}.txt")):
+        run_number += 1
+    return os.path.join(models_dir, f"run{run_number}.txt")
+
+
+def run_neat(config_file):
+    # Determine the next available run directory
+    models_dir = os.path.join(os.path.dirname(__file__), "models")
+    os.makedirs(models_dir, exist_ok=True)
+
     config = neat.Config(
         neat.DefaultGenome,
         neat.DefaultReproduction,
@@ -75,25 +69,22 @@ def run_neat(config_file, run_number):
     stats = neat.StatisticsReporter()
     population.add_reporter(stats)
 
-    # Make run folder
-    models_dir = os.path.join(os.path.dirname(__file__), "models")
-    run_dir = os.path.join(models_dir, f"run{run_number}")
-    os.makedirs(run_dir, exist_ok=True)
+    # Run the NEAT algorithm and get the best genome (winner)
+    winner = population.run(eval_genomes, 50)
 
-    generation = 0
-    def eval_with_generation(genomes, config):
-        nonlocal generation
-        eval_genomes(genomes, config, generation, run_dir)
-        generation += 1
+    # Now manually extract best_fitness and best_log_data from the best genome (winner)
+    # Access the global best_log_data after the run
+    # Since eval_genomes already tracks best_log_data, you need to access it after the run.
 
-    winner = population.run(eval_with_generation, 50)
+    # Get the next available file name
+    log_file_path = get_next_run_filename(models_dir)
 
-    # Save winner as a plain text file (no pickle)
-    winner_path = os.path.join(run_dir, "winner.txt")
-    with open(winner_path, "w") as f:
-        f.write(str(winner))
+    # Log the best robot's outputs
+    with open(log_file_path, "w") as log_file:
+        log_file.write("Actions\tObservations\n")
+        for actions, observations in best_log_data:  # You should ensure best_log_data is accessible
+            log_file.write(f"{actions}\t{observations}\n")
 
 if __name__ == "__main__":
     config_path = os.path.join(os.path.dirname(__file__), "utils", "neat-config.txt")
-    run_number = 1  # <-- Change this per run or make dynamic
-    run_neat(config_path, run_number)
+    run_neat(config_path)

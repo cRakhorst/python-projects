@@ -25,6 +25,7 @@ venv.bak/
 # Output model data
 models/run*/
 models/*/generation*/
+models/*
 
 # NEAT checkpoints (als je ze gebruikt)
 neat-checkpoint*
