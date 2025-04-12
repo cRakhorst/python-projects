@@ -4,7 +4,7 @@ import numpy as np
 from robot import WalkingRobotEnv
 
 def eval_genomes(genomes, config):
-    global best_log_data  # Make it accessible globally
+    global best_log_data
     best_genome = None
     best_fitness = float('-inf')
     best_log_data = []
@@ -44,7 +44,6 @@ def eval_genomes(genomes, config):
 
 
 def get_next_run_filename(models_dir):
-    # Find the next available run file name
     run_number = 1
     while os.path.exists(os.path.join(models_dir, f"run{run_number}.txt")):
         run_number += 1
@@ -52,7 +51,6 @@ def get_next_run_filename(models_dir):
 
 
 def run_neat(config_file):
-    # Determine the next available run directory
     models_dir = os.path.join(os.path.dirname(__file__), "models")
     os.makedirs(models_dir, exist_ok=True)
 
@@ -70,19 +68,13 @@ def run_neat(config_file):
     population.add_reporter(stats)
 
     # Run the NEAT algorithm and get the best genome (winner)
-    winner = population.run(eval_genomes, 50)
+    winner = population.run(eval_genomes, 200)
 
-    # Now manually extract best_fitness and best_log_data from the best genome (winner)
-    # Access the global best_log_data after the run
-    # Since eval_genomes already tracks best_log_data, you need to access it after the run.
-
-    # Get the next available file name
     log_file_path = get_next_run_filename(models_dir)
 
-    # Log the best robot's outputs
     with open(log_file_path, "w") as log_file:
         log_file.write("Actions\tObservations\n")
-        for actions, observations in best_log_data:  # You should ensure best_log_data is accessible
+        for actions, observations in best_log_data:
             log_file.write(f"{actions}\t{observations}\n")
 
 if __name__ == "__main__":

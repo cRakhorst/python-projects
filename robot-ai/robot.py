@@ -17,22 +17,21 @@ class WalkingRobotEnv(gym.Env):
         self.WIDTH, self.HEIGHT = 800, 600
         self.ROBOT_WIDTH, self.ROBOT_HEIGHT = 40, 60
         self.GROUND_Y = self.HEIGHT - 60
-        self.SCALE = 4  # pixels per position unit
+        self.SCALE = 4
 
         # Gravity and vertical position
-        self.gravity = 9.8  # pixels per second^2
-        self.vertical_velocity = 0  # initial vertical velocity
-        self.robot_y_velocity = 0  # velocity of the robot's torso
-        self.robot_y_position = self.GROUND_Y - self.ROBOT_HEIGHT  # initial torso position
+        self.gravity = 9.8
+        self.vertical_velocity = 0
+        self.robot_y_velocity = 0
+        self.robot_y_position = self.GROUND_Y - self.ROBOT_HEIGHT
+        self.jump_force = -5
 
-        # Action and observation spaces
-        self.action_space = spaces.MultiDiscrete([3, 3, 3, 3])
+        self.action_space = spaces.MultiDiscrete([3, 3, 3, 3, 2])
         self.observation_space = spaces.Box(
-            low=np.array([-90, 0, -90, 0, 0], dtype=np.float32),  # Add an extra dimension for robot_y_position
-            high=np.array([90, 150, 90, 150, self.GROUND_Y], dtype=np.float32)  # Add a limit for robot_y_position
+            low=np.array([-90, 0, -90, 0, 0], dtype=np.float32),
+            high=np.array([90, 150, 90, 150, self.GROUND_Y], dtype=np.float32)
         )
 
-        # Initial joint angles
         self.joint_angles = np.array([0, 90, 0, 90], dtype=np.float32)
 
         if self.render_enabled:
@@ -58,8 +57,8 @@ class WalkingRobotEnv(gym.Env):
         self.robot_y_position = self.GROUND_Y - self.ROBOT_HEIGHT
         self.robot_y_velocity = 0
         self.joint_angles = np.array([0, 90, 0, 90], dtype=np.float32)
-        obs = np.concatenate((self.joint_angles, [self.robot_y_position]), axis=None)  # Ensure this matches observation_space
-        self.prev_position = 0  # Reset this as well
+        obs = np.concatenate((self.joint_angles, [self.robot_y_position]), axis=None)
+        self.prev_position = 0
         return obs, {}
 
     def step(self, action):
@@ -70,11 +69,10 @@ class WalkingRobotEnv(gym.Env):
             elif action[i] == 2:
                 self.joint_angles[i] -= 5
 
-        # Clip joint angles to observation space limits (only the first 4 dimensions)
         self.joint_angles = np.clip(
             self.joint_angles,
-            self.observation_space.low[:4],  # Use only the first 4 values
-            self.observation_space.high[:4]  # Use only the first 4 values
+            self.observation_space.low[:4],
+            self.observation_space.high[:4]
         )
 
         # Apply gravity to the robot's torso
@@ -82,7 +80,6 @@ class WalkingRobotEnv(gym.Env):
         self.robot_y_position += self.robot_y_velocity * self.delta_time * 10
         self.simulated_time += self.delta_time
 
-        # Calculate the position of the robot's legs
         upper_leg = 20
         lower_leg = 20
         robot_x = self.WIDTH // 2 + int(self.position * self.SCALE)
@@ -107,13 +104,8 @@ class WalkingRobotEnv(gym.Env):
         if lowest_foot_y > self.GROUND_Y:
             correction = lowest_foot_y - self.GROUND_Y
             self.robot_y_position -= correction
-            self.robot_y_velocity = 0  # Reset velocity
-
-        if self.robot_y_position > self.GROUND_Y:
-            self.robot_y_position = self.GROUND_Y
             self.robot_y_velocity = 0
 
-        # Simulate the robot's movement
         contact_threshold = 0.5   # Position threshold for foot contact
         step_power = 0.05
 
@@ -128,17 +120,30 @@ class WalkingRobotEnv(gym.Env):
             self.position -= step_power
         if right_foot_on_ground and action[3] == 2:
             self.position -= step_power
+        if self.robot_y_position == self.GROUND_Y and action[4] == 1:
+            self.robot_y_velocity = self.jump_force
+
+        if self.robot_y_position > self.GROUND_Y:
+            self.robot_y_position = self.GROUND_Y
+            self.robot_y_velocity = 0
 
         # Observation
-        normalized_obs = self.joint_angles / 90.0  # van -1 tot 1
-        normalized_y = self.robot_y_position / self.GROUND_Y  # 0 tot 1
+        normalized_obs = self.joint_angles / 90.0
+        normalized_y = self.robot_y_position / self.GROUND_Y
         obs = np.concatenate((normalized_obs, [normalized_y]), axis=None)
 
         # Reward 1: Total distance moved
         delta_position = self.position - getattr(self, 'prev_position', 0)
         self.prev_position = self.position
         fitness_score = delta_position * 10
+        self.total_fitness_score += fitness_score
 
+        # reward 2: torso height
+        # if the torso is above a certain height, reward the robot
+        if self.robot_y_position <= self.GROUND_Y - 22.5:
+            fitness_score += 0.1
+        else:
+            fitness_score -= 10
         self.total_fitness_score += fitness_score
 
         info = {}
@@ -152,31 +157,23 @@ class WalkingRobotEnv(gym.Env):
         def to_int(pos):
             return int(pos[0]), int(pos[1])
 
-        # Process Pygame events to prevent "not responding" issues
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
 
         self.screen.fill((255, 255, 255))
-
-        # Draw ground
         pygame.draw.line(self.screen, (255, 0, 0), (0, self.GROUND_Y), (self.WIDTH, self.GROUND_Y), 4)
 
-        # Draw torso
         robot_x = self.WIDTH // 2 + int(self.position * self.SCALE)
         robot_y = int(self.robot_y_position)
-
         pygame.draw.rect(self.screen, (0, 0, 255), (robot_x - 10, robot_y - 40, 20, 40))
 
-        # Leg parameters
         upper_leg = 20
         lower_leg = 20
 
-        # Joint angles
         l_hip, l_knee, r_hip, r_knee = self.joint_angles
 
-        # Left leg
         l_hip_x = robot_x - 10
         l_hip_y = robot_y
         l_knee_x = l_hip_x + upper_leg * np.cos(np.radians(l_hip))
@@ -184,7 +181,6 @@ class WalkingRobotEnv(gym.Env):
         l_foot_x = l_knee_x + lower_leg * np.cos(np.radians(l_hip + l_knee - 90))
         l_foot_y = l_knee_y - lower_leg * np.sin(np.radians(l_hip + l_knee - 90))
 
-        # Right leg
         r_hip_x = robot_x + 10
         r_hip_y = robot_y
         r_knee_x = r_hip_x + upper_leg * np.cos(np.radians(r_hip))
@@ -192,20 +188,17 @@ class WalkingRobotEnv(gym.Env):
         r_foot_x = r_knee_x + lower_leg * np.cos(np.radians(r_hip + r_knee - 90))
         r_foot_y = r_knee_y - lower_leg * np.sin(np.radians(r_hip + r_knee - 90))
 
-        # Draw left leg
         pygame.draw.line(self.screen, (0, 0, 0), to_int((l_hip_x, l_hip_y)), to_int((l_knee_x, l_knee_y)), 4)
         pygame.draw.line(self.screen, (0, 0, 0), to_int((l_knee_x, l_knee_y)), to_int((l_foot_x, l_foot_y)), 4)
 
-        # Draw right leg
         pygame.draw.line(self.screen, (0, 0, 0), to_int((r_hip_x, r_hip_y)), to_int((r_knee_x, r_knee_y)), 4)
         pygame.draw.line(self.screen, (0, 0, 0), to_int((r_knee_x, r_knee_y)), to_int((r_foot_x, r_foot_y)), 4)
 
-        # Position text
         text = self.font.render(f"Position: {self.position}", True, (0, 0, 0))
         self.screen.blit(text, (10, 10))
 
         pygame.display.flip()
-        self.clock.tick(60)  # Limit to 60 FPS
+        self.clock.tick(60)
 
     def close(self):
         pygame.quit()
@@ -224,7 +217,6 @@ if __name__ == "__main__":
                 env.close()
                 sys.exit()
 
-        # Check time elapsed
         current_time = time.time()
         elapsed_time = current_time - start_time
         if elapsed_time >= 10:
