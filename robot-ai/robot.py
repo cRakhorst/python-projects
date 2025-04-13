@@ -136,7 +136,7 @@ class WalkingRobotEnv(gym.Env):
         delta_position = self.position - getattr(self, 'prev_position', 0)
         self.prev_position = self.position
         if delta_position < 0:
-            fitness_score = delta_position * 100
+            fitness_score = 2 + int(delta_position // 2) ** 2
         else:
             multiplier = 2 + int(delta_position // 5)
             fitness_score = delta_position * multiplier
@@ -146,9 +146,9 @@ class WalkingRobotEnv(gym.Env):
         # reward 2: torso height
         # if the torso is above a certain height, reward the robot
         if self.robot_y_position <= self.GROUND_Y - 25:
-            fitness_score += 0.1
+            fitness_score = 0.1
         else:
-            fitness_score -= 0.1
+            fitness_score = -0.1
         self.total_fitness_score += fitness_score
 
         # reward 3: foot switching
@@ -161,22 +161,12 @@ class WalkingRobotEnv(gym.Env):
             leg_used_now = 'right'
         
         if leg_used_now and leg_used_now != self.last_leg_used:
-            fitness_score += 0.1
+            fitness_score = 0.1
         else:
-            fitness_score -= 0.1
+            fitness_score = -10
         self.last_leg_used = leg_used_now
 
         self.total_fitness_score += fitness_score
-
-        # # reward 4: reward for normal size steps
-        # if (left_foot_on_ground and action[1] != 0) or (right_foot_on_ground and action[3] != 0):
-        #     step_size = np.linalg.norm(action[1:3] - action[4:6])
-        #     if 0.5 < step_size < 1.0:
-        #         fitness_score += 0.1
-        #     else:
-        #         fitness_score -= 0.5
-        
-        # self.total_fitness_score += fitness_score
 
         info = {}
         done = (self.simulated_time >= 10)

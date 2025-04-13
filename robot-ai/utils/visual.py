@@ -9,7 +9,7 @@ def get_latest_run_file():
     existing_runs = [f for f in os.listdir(models_dir) if f.startswith("run") and f.endswith(".txt")]
 
     run_numbers = [int(f[3:-4]) for f in existing_runs if f[3:-4].isdigit()]
-    latest_run_number = max(run_numbers, default=0) # put in a desiganted run number if you don't want the latest one
+    latest_run_number = max(run_numbers, default=0) # put in a designated run number if you don't want the latest one
 
     latest_run_file = os.path.join(models_dir, f"run{latest_run_number}.txt")
     return latest_run_file
