@@ -68,7 +68,7 @@ def run_neat(config_file):
     population.add_reporter(stats)
 
     # Run the NEAT algorithm and get the best genome (winner)
-    winner = population.run(eval_genomes, 200)
+    winner = population.run(eval_genomes, 50)
 
     log_file_path = get_next_run_filename(models_dir)
 
