@@ -58,6 +58,7 @@ class WalkingRobotEnv(gym.Env):
         self.robot_y_velocity = 0
         self.joint_angles = np.array([0, 90, 0, 90], dtype=np.float32)
         obs = np.concatenate((self.joint_angles, [self.robot_y_position]), axis=None)
+        self.last_foot_used = 0
         self.prev_position = 0
         return obs, {}
 
@@ -133,40 +134,35 @@ class WalkingRobotEnv(gym.Env):
         obs = np.concatenate((normalized_obs, [normalized_y]), axis=None)
 
         # Reward 1: Total distance moved
-        delta_position = self.position - getattr(self, 'prev_position', 0)
-        self.prev_position = self.position
-        if delta_position < 0:
-            fitness_score = 2 + int(delta_position // 2) ** 2
-        else:
-            multiplier = 2 + int(delta_position // 5)
-            fitness_score = delta_position * multiplier
-
+        fitness_score = self.position * 10
         self.total_fitness_score += fitness_score
 
         # reward 2: torso height
         # if the torso is above a certain height, reward the robot
-        if self.robot_y_position <= self.GROUND_Y - 25:
-            fitness_score = 0.1
+        if self.GROUND_Y - 30 <= self.robot_y_position <= self.GROUND_Y - 25:
+            fitness_score += 10
         else:
-            fitness_score = -0.1
+            fitness_score -= 10
         self.total_fitness_score += fitness_score
 
-        # reward 3: foot switching
-        self.last_leg_used = getattr(self, 'last_leg_used', None)
-        leg_used_now = None
-
-        if left_foot_on_ground and action[1] in [1, 2]:
-            leg_used_now = 'left'
-        if right_foot_on_ground and action[3] in [1, 2]:
-            leg_used_now = 'right'
-        
-        if leg_used_now and leg_used_now != self.last_leg_used:
-            fitness_score = 0.1
+        # Reward 3: alternating foot usage
+        if left_foot_on_ground and self.last_foot_used == 2 and action[1] == 1:
+            fitness_score += 2000
+            self.last_foot_used = 1
+        elif right_foot_on_ground and self.last_foot_used == 1 and action[3] == 1:
+            fitness_score += 2000
+            self.last_foot_used = 2
         else:
-            fitness_score = -10
-        self.last_leg_used = leg_used_now
-
+            fitness_score -= 1000 
         self.total_fitness_score += fitness_score
+
+        # Reward 4: smooth movement
+        if abs(self.position - self.prev_position) < 0.1:
+            fitness_score += 5
+        else:
+            fitness_score -= 5
+        self.total_fitness_score += fitness_score
+        self.prev_position = self.position
 
         info = {}
         done = (self.simulated_time >= 10)
@@ -224,31 +220,3 @@ class WalkingRobotEnv(gym.Env):
 
     def close(self):
         pygame.quit()
-        pass
-
-if __name__ == "__main__":
-    env = WalkingRobotEnv()
-    obs, _ = env.reset()
-    total_fitness_score = 0
-
-    start_time = time.time()
-
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                env.close()
-                sys.exit()
-
-        current_time = time.time()
-        elapsed_time = current_time - start_time
-        if elapsed_time >= 10:
-            break
-
-        action = env.action_space.sample()
-        obs, fitness_score, done, truncated, info = env.step(action)
-        total_fitness_score += fitness_score
-
-        env.render()
-
-    print(f"Total fitness score: {total_fitness_score:.2f}")
-    env.close()
