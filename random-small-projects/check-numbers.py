@@ -8,3 +8,4 @@ for i in range (1, 360):
     checkedNumber = 360 / i
     if (number):
         print('number:', i, 'is viable')
+        

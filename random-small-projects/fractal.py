@@ -33,7 +33,13 @@ def serp_tri(side, level):
         turtle.speed(0)
 
 def main():
-    serp_tri(850, 7)
+    while True:
+        serp_tri(850, 7)
+        turtle.update()
+        turtle.reset()
+        turtle.bgcolor('white')
+        turtle.color('white')
+        turtle.goto(-420, -390)
 
 if __name__ == '__main__':
     main()

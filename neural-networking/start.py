@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 w = weights, b = bias, i = input, h = hidden, o = output, l = label
 """
 images, labels = get_mnist()
-w_i_h = np.random.randn(100, 784) * np.sqrt(1 / 784)  # 100 hidden neurons, 784 input neurons
-w_h_o = np.random.randn(10, 100) * np.sqrt(1 / 30)  # 10 output neurons, 100 hidden neurons
-b_i_h = np.zeros((100, 1))  # 100 hidden neurons
+w_i_h = np.random.randn(5, 784) * np.sqrt(1 / 784)  # 100 hidden neurons, 784 input neurons
+w_h_o = np.random.randn(10, 5) * np.sqrt(1 / 30)  # 10 output neurons, 100 hidden neurons
+b_i_h = np.zeros((5, 1))  # 100 hidden neurons
 b_h_o = np.zeros((10, 1))  # 10 output neurons
 
 learn_rate = 0.01

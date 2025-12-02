@@ -12,4 +12,4 @@ def randomise_uppercase(s):
                 chars[i] = chars[i].upper()
     return ''.join(chars)
 
-print(randomise_uppercase("minutes later"))
+print(randomise_uppercase("collaboration"))
