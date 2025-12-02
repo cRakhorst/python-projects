@@ -56,7 +56,6 @@ def part2():
             s = str(i)
             length = len(s)
 
-            # probeer elke mogelijke pattern-lengte
             for size in range(1, length // 2 + 1):
 
                 if length % size != 0:
@@ -66,8 +65,8 @@ def part2():
                 repetitions = length // size
 
                 if pattern * repetitions == s:
-                    answer += i   # TEL HET GETAL OP (zoals in part1)
-                    break          # stop na eerste match
+                    answer += i
+                    break
 
     return answer
 
