@@ -65,7 +65,7 @@ def detect_sound(threshold=500, chunk=1024, rate=44100, loudsound=6000):
     finally:
         stream.stop_stream()
         stream.close()
-        p.terminate()
+      
 
 if __name__ == "__main__":
     detect_sound()
