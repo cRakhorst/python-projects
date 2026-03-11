@@ -1,161 +1,270 @@
+"""Cross-math puzzle generator.
+
+Grid layout (size=7, so 3 numbers per row/column):
+
+    n  op  n  op  n  =  result
+    op     op     op    op
+    n  op  n  op  n  =  result
+    op     op     op    op
+    n  op  n  op  n  =  result
+    =      =      =     =
+    r  op  r  op  r  =  corner
+
+Odd-indexed rows/cols are operators; even-indexed are numbers or results.
+The second-to-last row/col is the "=" separator row/col.
+The last row/col holds results.
+"""
+
 import random
-import math
+import time
+from dataclasses import dataclass, field
+from typing import Optional
 
-# Grid configuration
-GRID_SIZE = 7
+# ── Types ──────────────────────────────────────────────────────────────────────
 
-def get_random_number():
-    """Generate a random number between 1 and 50."""
-    return math.floor(random.random() * 50 + 1)
+Cell = Optional[int | str]
+Grid = list[list[Cell]]
 
-def get_random_operator():
-    """Generate a random operator."""
-    operators = ["+", "-", "x"]
-    return operators[math.floor(random.random() * 3)]
+OPERATORS = ("+", "-", "x", "/")
 
-def generate_puzzle(size):
-    """Generate a cross-math puzzle grid with guaranteed correct equations."""
-    while True:  # Keep trying until we generate a valid puzzle
-        grid: list[list[int | str | None]] = [[None for _ in range(size)] for _ in range(size)]
-        
-        # Fill random numbers and operators in the grid
-        for i in range(size):
-            for j in range(size):
-                if i == size - 2:
-                    # Separator row
-                    if j % 2 == 0:
-                        grid[i][j] = "="
-                    else:
-                        grid[i][j] = None
-                elif j == size - 2:
-                    # Separator column
-                    if i % 2 == 0:
-                        grid[i][j] = "="
-                    else:
-                        grid[i][j] = None
-                elif i % 2 == 0 and j % 2 == 0:
-                    # Number positions
-                    grid[i][j] = get_random_number()
-                elif i == size - 1 and j == size - 1:
-                    # Bottom-right corner - calculate later
-                    grid[i][j] = None
-                elif i == size - 1 and j % 2 == 0:
-                    # Bottom row - numbers
-                    grid[i][j] = get_random_number()
-                elif i == size - 1 and j % 2 == 1:
-                    # Bottom row - operators
-                    grid[i][j] = get_random_operator()
-                elif j == size - 1 and i % 2 == 0:
-                    # Right column - numbers, calculate later
-                    grid[i][j] = None
-                elif j == size - 1 and i % 2 == 1:
-                    # Right column - operators
-                    grid[i][j] = get_random_operator()
-                elif i % 2 == 1 and j % 2 == 1:
-                    # Empty intersections
-                    grid[i][j] = None
-                elif i % 2 == 0 and j % 2 == 1:
-                    # Horizontal operators
-                    grid[i][j] = get_random_operator()
-                elif i % 2 == 1 and j % 2 == 0:
-                    # Vertical operators
-                    grid[i][j] = get_random_operator()
-        
-        # Calculate and fill horizontal results (rightmost column for top rows)
-        for i in range(0, size - 2, 2):
-            numbers = [grid[i][j] for j in range(0, size - 2, 2)]
-            operators = [grid[i][j] for j in range(1, size - 2, 2)]
-            result = calculate_line(numbers, operators)
-            grid[i][size - 1] = result
-        
-        # Calculate and fill vertical results (bottom row for left columns)
-        for j in range(0, size - 2, 2):
-            numbers = [grid[i][j] for i in range(0, size - 2, 2)]
-            operators = [grid[i][j] for i in range(1, size - 2, 2)]
-            result = calculate_line(numbers, operators)
-            grid[size - 1][j] = result
-        
-        # Calculate bottom-right corner and solve for the operator
-        bottom_numbers = [grid[size - 1][j] for j in range(0, size - 2, 2)]
-        bottom_operators = [grid[size - 1][j] for j in range(1, size - 2, 2)]
-        bottom_result = calculate_line(bottom_numbers, bottom_operators)
-        
-        # Right column: get all row results and operators
-        right_col_numbers = [grid[i][size - 1] for i in range(0, size - 2, 2)]
-        right_col_operators = [grid[i][size - 1] for i in range(1, size - 2, 2)]
-        
-        # Find an operator at position (1, size-1) that makes the right column equation equal to bottom_result
-        found = False
-        if len(right_col_numbers) >= 2:
-            # Try different operators at position (1, size-1), keeping other operators as they are
-            for possible_op in ["+", "-", "x"]:
-                # Replace the first operator (at position 1, size-1) with possible_op
-                test_operators = [possible_op] + right_col_operators[1:] if len(right_col_operators) > 1 else [possible_op]
-                result = calculate_line(right_col_numbers, test_operators)
-                
-                if result == bottom_result:
-                    # This operator works!
-                    grid[1][size - 1] = possible_op
-                    found = True
-                    break
-        
-        if found:
-            # Valid puzzle found
-            grid[size - 1][size - 1] = bottom_result
-            return grid
-        # else: No valid operator found, regenerate puzzle
+# ── Arithmetic ─────────────────────────────────────────────────────────────────
 
-def calculate_line(numbers, operators):
-    """Calculate the result of a line given numbers and operators following order of operations."""
-    if not numbers:
-        return None
+def apply_op(a: int, op: str, b: int) -> int:
+    match op:
+        case "+": return a + b
+        case "-": return a - b
+        case "x": return a * b
+        case "/": return a // b if b != 0 else 0
+        case _: raise ValueError(f"Unknown operator: {op!r}")
+
+
+def evaluate(numbers: list[int], operators: list[str]) -> int:
+    """Evaluate a flat arithmetic expression respecting multiplication priority."""
+    if len(numbers) == 1:
+        return numbers[0]
     
-    if not operators:
-        return numbers[0] if len(numbers) == 1 else None
-    
-    # Create mutable lists to work with
     nums = list(numbers)
     ops = list(operators)
-    
-    # First pass: handle multiplication and division from left to right
+
+    # First pass: multiplication / division
     i = 0
     while i < len(ops):
-        if ops[i] == "x":
-            result = nums[i] * nums[i + 1]
-            nums = nums[:i] + [result] + nums[i+2:]
-            ops = ops[:i] + ops[i+1:]
-        elif ops[i] == "/":
-            result = nums[i] // nums[i + 1] if nums[i + 1] != 0 else 0
-            nums = nums[:i] + [result] + nums[i+2:]
-            ops = ops[:i] + ops[i+1:]
+        if ops[i] in ("x", "/"):
+            nums[i] = apply_op(nums[i], ops[i], nums[i + 1])
+            del nums[i + 1]
+            del ops[i]
         else:
             i += 1
-    
-    # Second pass: handle addition and subtraction from left to right
+
+    # Second pass: addition / subtraction
     result = nums[0]
-    for i, op in enumerate(ops):
-        if op == "+":
-            result += nums[i + 1]
-        elif op == "-":
-            result -= nums[i + 1]
-    
+    for op, num in zip(ops, nums[1:]):
+        result = apply_op(result, op, num)
     return result
 
-start = generate_puzzle(GRID_SIZE)
+# ── Random helpers ─────────────────────────────────────────────────────────────
 
-def display_puzzle(grid):
-    """Display the cross-math puzzle in a readable grid format."""
+def rand_number(lo: int = 1, hi: int = 20) -> int:
+    return random.randint(lo, hi)
+
+def rand_op() -> str:
+    return random.choice(OPERATORS)
+
+# ── Grid structure helpers ─────────────────────────────────────────────────────
+
+@dataclass
+class PuzzleLayout:
+    """Precomputed index sets for a given grid size."""
+    size: int
+    sep: int = field(init=False)   # separator row/col index
+    last: int = field(init=False)  # result row/col index
+
+    def __post_init__(self) -> None:
+        self.sep = self.size - 2
+        self.last = self.size - 1
+
+    def is_separator(self, i: int, j: int) -> bool:
+        return i == self.sep or j == self.sep
+
+    def is_number_cell(self, i: int, j: int) -> bool:
+        return i % 2 == 0 and j % 2 == 0
+
+    def is_h_operator(self, i: int, j: int) -> bool:
+        return i % 2 == 0 and j % 2 == 1
+
+    def is_v_operator(self, i: int, j: int) -> bool:
+        return i % 2 == 1 and j % 2 == 0
+
+    def row_numbers(self, grid: Grid, row: int) -> list[int]:
+        return [grid[row][j] for j in range(0, self.sep, 2)]  # type: ignore[misc]
+
+    def row_operators(self, grid: Grid, row: int) -> list[str]:
+        return [grid[row][j] for j in range(1, self.sep, 2)]  # type: ignore[misc]
+
+    def col_numbers(self, grid: Grid, col: int) -> list[int]:
+        return [grid[i][col] for i in range(0, self.sep, 2)]  # type: ignore[misc]
+
+    def col_operators(self, grid: Grid, col: int) -> list[str]:
+        return [grid[i][col] for i in range(1, self.sep, 2)]  # type: ignore[misc]
+
+# ── Puzzle generation ──────────────────────────────────────────────────────────
+
+def _blank_grid(size: int) -> Grid:
+    return [[None] * size for _ in range(size)]
+
+
+def _fill_interior(grid: Grid, layout: PuzzleLayout) -> None:
+    """Place random numbers and operators in the interior (non-result) cells."""
+    sep, last = layout.sep, layout.last
+    for i in range(last):
+        for j in range(last):
+            if i == sep or j == sep:
+                # Separator row/col: "=" on even positions, None on odd
+                grid[i][j] = "=" if (i == sep and j % 2 == 0) or (j == sep and i % 2 == 0) else None
+            elif layout.is_number_cell(i, j):
+                grid[i][j] = rand_number()
+            elif layout.is_h_operator(i, j):
+                grid[i][j] = rand_op()
+            elif layout.is_v_operator(i, j):
+                grid[i][j] = rand_op()
+            # Odd/odd intersections stay None
+
+
+def _compute_results(grid: Grid, layout: PuzzleLayout) -> None:
+    """Fill the result column and row from the interior values."""
+    sep, last = layout.sep, layout.last
+
+    # Horizontal results → rightmost column
+    for i in range(0, sep, 2):
+        grid[i][last] = evaluate(layout.row_numbers(grid, i), layout.row_operators(grid, i))
+
+    # Vertical results → bottom row
+    for j in range(0, sep, 2):
+        grid[last][j] = evaluate(layout.col_numbers(grid, j), layout.col_operators(grid, j))
+
+
+def _fill_result_row_operators(grid: Grid, layout: PuzzleLayout) -> None:
+    """Place random operators between the vertical results in the bottom row."""
+    sep = layout.sep
+    for j in range(1, sep, 2):
+        grid[layout.last][j] = rand_op()
+
+
+def _fill_result_col_operators(grid: Grid, layout: PuzzleLayout) -> bool:
+    """
+    Choose operators for the result column so that evaluating it top-to-bottom
+    equals the bottom-row expression.  Returns False if no valid assignment exists.
+    """
+    sep, last = layout.sep, layout.last
+
+    # Target: evaluate the bottom result row
+    bottom_numbers   = layout.row_numbers(grid, last)
+    bottom_operators = layout.row_operators(grid, last)
+    target = evaluate(bottom_numbers, bottom_operators)
+
+    # Result-column numbers (already computed)
+    col_numbers = [grid[i][last] for i in range(0, sep, 2)]
+
+    # We need to find operators for positions (1, last), (3, last), …
+    op_rows = list(range(1, sep, 2))
+    n_ops = len(op_rows)
+
+    # Brute-force over all operator combinations (3^n_ops at most, typically ≤9)
+    from itertools import product
+    for ops in product(OPERATORS, repeat=n_ops):
+        if evaluate(col_numbers, list(ops)) == target:  # type: ignore[arg-type]
+            for row, op in zip(op_rows, ops):
+                grid[row][last] = op
+            grid[sep][last] = "="
+            grid[last][sep] = "="
+            grid[last][last] = target
+            return True
+
+    return False
+
+
+def generate_puzzle(size: int = 7, max_attempts: int = 1_000) -> Grid:
+    """
+    Generate a cross-math puzzle grid of the given size.
+
+    size must be odd and ≥ 5 (e.g. 5, 7, 9).
+    Raises RuntimeError if no valid puzzle is found within max_attempts.
+    """
+    if size < 5 or size % 2 == 0:
+        raise ValueError("size must be an odd integer ≥ 5")
+
+    layout = PuzzleLayout(size)
+
+    for _ in range(max_attempts):
+        grid = _blank_grid(size)
+        _fill_interior(grid, layout)
+        _compute_results(grid, layout)
+        _fill_result_row_operators(grid, layout)
+        if _fill_result_col_operators(grid, layout):
+            return grid
+
+    raise RuntimeError(f"Could not generate a valid puzzle after {max_attempts} attempts")
+
+# ── Display ────────────────────────────────────────────────────────────────────
+
+def format_cell(cell: Cell) -> str:
+    if cell is None:
+        return "   "
+    if isinstance(cell, int):
+        return f"{cell:3d}"
+    return f"  {cell}"
+
+
+def display_puzzle(grid: Grid) -> None:
     for row in grid:
-        display_row = []
-        for cell in row:
-            if cell is None:
-                display_row.append("  ")
-            elif isinstance(cell, int):
-                display_row.append(f"{cell:2d}")
-            elif cell == "=":
-                display_row.append(" =")
-            else:
-                display_row.append(f" {cell}")
-        print("  ".join(display_row))
+        print("  ".join(format_cell(c) for c in row))
 
-display_puzzle(start)
+
+# ── Batch generation with timing ───────────────────────────────────────────────
+
+def generate_puzzles_with_timing(
+    count: int = 10,
+    size: int = 7,
+    max_attempts: int = 1_000,
+) -> None:
+    """Generate `count` puzzles, print each one, then show a timing summary."""
+    times: list[float] = []
+
+    for i in range(1, count + 1):
+        t_start = time.perf_counter()
+        puzzle = generate_puzzle(size=size, max_attempts=max_attempts)
+        t_end = time.perf_counter()
+
+        elapsed = t_end - t_start
+        times.append(elapsed)
+
+        # display_puzzle(puzzle)
+        
+        if i % 1000 == 0:
+            print(f"  Generated {i:,} puzzles...")
+
+    # ── Summary ────────────────────────────────────────────────────────────────
+    total   = sum(times)
+    average = total / len(times)
+
+    print(f"\n{'=' * 50}")
+    print("  Timing Summary")
+    print(f"{'=' * 50}")
+    if count <= 100:
+        print(f"  {'Puzzle':<10} {'Time (ms)':>12}")
+        print(f"  {'-'*10} {'-'*12}")
+        for idx, t in enumerate(times, start=1):
+            print(f"  {idx:<10} {t * 1_000:>12.3f}")
+        print(f"  {'-'*10} {'-'*12}")
+    print(f"  {'Count':<10} {count:>12}")
+    print(f"  {'Total':<10} {total * 1_000:>12.3f} ms")
+    print(f"  {'Average':<10} {average * 1_000:>12.3f} ms")
+    print(f"  {'Min':<10} {min(times) * 1_000:>12.3f} ms")
+    print(f"  {'Max':<10} {max(times) * 1_000:>12.3f} ms")
+    print(f"{'=' * 50}\n")
+
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    generate_puzzles_with_timing(count=1000000, size=5)

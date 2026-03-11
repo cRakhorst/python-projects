@@ -109,7 +109,7 @@ def brute_force(visualize=True):
             current_board = board[:]
             is_valid = not under_attack_full(board)
             
-            time.sleep(0.001)
+            # time.sleep(0.001)
             
             if is_valid:
                 solutions.append(board[:])
